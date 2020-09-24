@@ -6,9 +6,12 @@
 
 import requests
 import random
+import urllib3
 from bs4 import BeautifulSoup
 from threading import Thread
 import os
+
+urllib3.disable_warnings()
 
 class Th(Thread):
     def __init__(self, num):
@@ -18,7 +21,7 @@ class Th(Thread):
         while True:
             page = random.randint(0, 904625697166532776746648320380374280100293470930272690489102837043110636675)
             try:
-                req = requests.get("https://lbc.cryptoguru.org/dio/%s" %page)
+                req = requests.get("https://lbc.cryptoguru.org/dio/%s" %page, verify=False)
                 if req.status_code == 200:
                     print("Page: %s" %page)
                     content = req.content
