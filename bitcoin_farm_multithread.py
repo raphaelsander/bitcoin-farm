@@ -63,11 +63,14 @@ class Th(Thread):
                                         xy, addresses2['%s' % xy]['total_received'], list_addresses[xyz][1]))
                                     print(output)
                                     os.system('echo %s >> /home/pi/keys.txt' % output)
+                else:
+                    print("%s - ERROR - Request Code: %s - Page: %s" % (ctime(), req.status_code, page))
 
             except TimeoutError:
-                print("%s - ERRO - Page: %s" % (ctime(), page))
+                print("%s - ERROR - TimeoutError - Page: %s" % (ctime(), page))
 
 
-for x in range(0, 4):
+# If you increase the range, maybe you get the request error 503
+for x in range(0, 1):
     a = Th(x)
     a.start()
