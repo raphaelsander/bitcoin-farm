@@ -11,6 +11,8 @@ import os
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+os.system('mkdir logs')
+
 
 class Th(Thread):
     def __init__(self, num):
@@ -55,19 +57,23 @@ class Th(Thread):
                                     output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['final_balance'], list_addresses[xyz][1]))
                                     print(output)
-                                    os.system('echo %s >> /home/pi/keys.txt' % output)
+                                    os.system('echo %s >> logs/keys.txt' % output)
                         if addresses2['%s' % xy]['total_received'] != 0:
                             for xyz in range(0, 256, 2):
                                 if list_addresses[xyz][2] == xy:
                                     output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['total_received'], list_addresses[xyz][1]))
                                     print(output)
-                                    os.system('echo %s >> /home/pi/keys.txt' % output)
+                                    os.system('echo %s >> logs/keys.txt' % output)
                 else:
-                    print("%s - ERROR - Request Code: %s - Page: %s" % (ctime(), req.status_code, page))
+                    output = ("%s - ERROR - Request Code: %s - Page: %s" % (ctime(), req.status_code, page))
+                    print(output)
+                    os.system('echo %s >> logs/error.txt' % output)
 
             except TimeoutError:
-                print("%s - ERROR - TimeoutError - Page: %s" % (ctime(), page))
+                output = ("%s - ERROR - TimeoutError - Page: %s" % (ctime(), page))
+                print(output)
+                os.system('echo %s >> logs/error.txt' % output)
 
 
 # If you increase the range, maybe you get the request error 503
