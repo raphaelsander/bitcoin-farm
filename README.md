@@ -18,3 +18,25 @@ It's more ease find a specific sand point instead a Bitcoin wallet with money.
 
 But if you find any wallet with money, what do you do?
 Write your answers in this [issue](https://github.com/raphaelsander/Bitcoin-Farm/issues/2)
+
+---
+
+## To run in Docker container
+
+1 - Create a Bitcoin Farm volume to save the wallet with money and transactions:
+```bash
+$ docker volume create bitcoinfarm_volume
+```
+
+2 - Build the image
+```bash
+$ docker build -t bitcoinfarm .
+```
+
+3 - Run the container:
+```bash
+$ docker run -d \
+  --name bitcoinfarm \
+  --mount source=bitcoinfarm_volume,target=/usr/src/app/logs \
+  bitcoinfarm
+```
