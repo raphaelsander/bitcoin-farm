@@ -1,4 +1,7 @@
-.dockerignore
-.gitignore
-venv
-Dockerfile
+# Ignore everything
+**
+
+# Allow important files
+!bitcoin_farm_multithread.py
+!docker-entrypoint.sh
+!requirements.txt
