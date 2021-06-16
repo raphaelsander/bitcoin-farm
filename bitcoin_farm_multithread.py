@@ -1,17 +1,37 @@
 #!/usr/bin/python3
 
-import requests
-import urllib3
-import random
 from bs4 import BeautifulSoup
 from threading import Thread
-import json
+from random import randint
 from time import ctime
-import os
+from os import mkdir
+import requests
+import urllib3
+import json
+
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-os.system('mkdir logs')
+try:
+    mkdir("logs")
+    print("%s - INFO - The directory logs created" % ctime())
+
+except FileExistsError:
+    print("%s - INFO - The directory logs exist" % ctime())
+
+
+def write_logs(file, output):
+    if file == "error":
+        f = open("logs/error.txt", "a")
+    elif file == "keys":
+        f = open("logs/keys.txt", "a")
+    else:
+        print("%s - ERROR - Log file don't found: %s" % (ctime(), file))
+        return
+
+    output = output + "\n"
+    f.write(output)
+    f.close()
 
 
 class Th(Thread):
@@ -21,7 +41,7 @@ class Th(Thread):
 
     def run(self):
         while True:
-            page = random.randint(0, 904625697166532776746648320380374280100293470930272690489102837043110636675)
+            page = randint(0, 904625697166532776746648320380374280100293470930272690489102837043110636675)
             try:
                 req = requests.get("https://lbc.cryptoguru.org/dio/%s" % page, verify=False)
                 if req.status_code == 200:
@@ -42,12 +62,8 @@ class Th(Thread):
                         if x < 254:
                             addresses += "|"
 
-                    # print("%s - %s" % (ctime(), addresses))
-
                     req2 = requests.get("https://blockchain.info/balance?active=%s" % addresses)
                     content2 = req2.content
-
-                    # print("%s - %s" % (ctime(), content2))
 
                     addresses2 = json.loads(content2.decode("utf-8"))
                     for xy in addresses2:
@@ -57,23 +73,23 @@ class Th(Thread):
                                     output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['final_balance'], list_addresses[xyz][1]))
                                     print(output)
-                                    os.system('echo %s >> logs/keys.txt' % output)
+                                    write_logs("keys", output)
                         if addresses2['%s' % xy]['total_received'] != 0:
                             for xyz in range(0, 256, 2):
                                 if list_addresses[xyz][2] == xy:
                                     output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['total_received'], list_addresses[xyz][1]))
                                     print(output)
-                                    os.system('echo %s >> logs/keys.txt' % output)
+                                    write_logs("keys", output)
                 else:
                     output = ("%s - ERROR - Request Code: %s - Page: %s" % (ctime(), req.status_code, page))
                     print(output)
-                    os.system('echo %s >> logs/error.txt' % output)
+                    write_logs("error", output)
 
             except TimeoutError:
                 output = ("%s - ERROR - TimeoutError - Page: %s" % (ctime(), page))
                 print(output)
-                os.system('echo %s >> logs/error.txt' % output)
+                write_logs("error", output)
 
 
 # If you increase the range, maybe you get the request error 503
