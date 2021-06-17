@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 
-from bs4 import BeautifulSoup
 from threading import Thread
 from random import randint
 from time import ctime
+from bitcoin import *
 from os import mkdir
 import requests
 import urllib3
@@ -11,6 +11,8 @@ import json
 
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+total = 0
 
 try:
     mkdir("logs")
@@ -34,65 +36,78 @@ def write_logs(file, output):
     f.close()
 
 
+def generate_addresses():
+    addresses = []
+
+    for address in range(0, 128):
+        random_wallet = str(randint(0, 115792089237316195423570985008687907852837564279074904382605163141518161494337))
+        wallet = [sha256(random_wallet), pubtoaddr(privtopub(sha256(random_wallet)))]
+        addresses.append(wallet)
+
+    return addresses
+
+
+def create_url(addresses):
+    public_keys = ""
+
+    for i in range(0, 128):
+        public_keys += addresses[i][1]
+
+        if i < 127:
+            public_keys += "|"
+
+    url = "https://blockchain.info/balance?active=" + public_keys
+    return url
+
+
 class Th(Thread):
     def __init__(self, num):
         Thread.__init__(self)
         self.num = num
 
     def run(self):
+        global total
+
         while True:
-            page = randint(0, 904625697166532776746648320380374280100293470930272690489102837043110636675)
             try:
-                req = requests.get("https://lbc.cryptoguru.org/dio/%s" % page, verify=False)
-                if req.status_code == 200:
-                    print("%s - Page: %s" % (ctime(), page))
-                    content = req.content
-                    soup = BeautifulSoup(content, 'html.parser')
-                    all_span = soup.find_all(name='span')
-                    list_addresses = []
-                    for x in all_span:
-                        list_addresses.append(x.get_text().split())
+                addresses = generate_addresses()
+                url = create_url(addresses)
 
-                    y = json.dumps(list_addresses)
-
-                    addresses = ""
-                    for x in range(0, 256, 2):
-                        addresses += str(list_addresses[x][2])
-
-                        if x < 254:
-                            addresses += "|"
-
-                    req2 = requests.get("https://blockchain.info/balance?active=%s" % addresses)
+                req2 = requests.get(url)
+                if req2.status_code == 200:
                     content2 = req2.content
 
                     addresses2 = json.loads(content2.decode("utf-8"))
                     for xy in addresses2:
                         if addresses2['%s' % xy]['final_balance'] != 0:
-                            for xyz in range(0, 256, 2):
-                                if list_addresses[xyz][2] == xy:
+                            for xyz in range(0, 128):
+                                if addresses[xyz][1] == xy:
                                     output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
-                                        xy, addresses2['%s' % xy]['final_balance'], list_addresses[xyz][1]))
+                                        xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
                                     print(output)
                                     write_logs("keys", output)
                         if addresses2['%s' % xy]['total_received'] != 0:
-                            for xyz in range(0, 256, 2):
-                                if list_addresses[xyz][2] == xy:
+                            for xyz in range(0, 128):
+                                if addresses[xyz][1] == xy:
                                     output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
-                                        xy, addresses2['%s' % xy]['total_received'], list_addresses[xyz][1]))
+                                        xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
                                     print(output)
                                     write_logs("keys", output)
+                    total += 128
+
                 else:
-                    output = ("%s - ERROR - Request Code: %s - Page: %s" % (ctime(), req.status_code, page))
-                    print(output)
-                    write_logs("error", output)
+                    print("Error - %s" % url)
 
             except TimeoutError:
-                output = ("%s - ERROR - TimeoutError - Page: %s" % (ctime(), page))
+                output = ("%s - ERROR - TimeoutError - URL: %s" % (ctime(), url))
                 print(output)
                 write_logs("error", output)
 
 
-# If you increase the range, maybe you get the request error 503
-for x in range(0, 1):
+for x in range(0, 4):
     a = Th(x)
     a.start()
+
+while True:
+    time.sleep(10)
+    print("%s - INFO - Total verified: %s" % (ctime(), total))
