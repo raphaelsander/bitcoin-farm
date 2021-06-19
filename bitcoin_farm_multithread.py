@@ -1,18 +1,25 @@
 #!/usr/bin/python3
 
 from threading import Thread
-from random import randint
 from time import ctime
 from bitcoin import *
 from os import mkdir
 import requests
 import urllib3
+import base58
 import json
 
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Number of wallets verify per request to blockchain.info API.
+# Number maximum is 138 and minimum is 1.
+n = 138
 
+# Don't change the values below
 total = 0
+b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+
+# Disabled Insecure Request Warning
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 try:
     mkdir("logs")
@@ -36,24 +43,36 @@ def write_logs(file, output):
     f.close()
 
 
-def generate_addresses():
+def wif_uncompressed(byte, raw_private_key):
+    extended_key = byte+raw_private_key
+
+    first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key[:66])).hexdigest()
+    second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+
+    final_key = extended_key[:66]+second_sha256[:8]
+
+    wif = base58.b58encode(binascii.unhexlify(final_key))
+    return wif.decode("utf-8")
+
+
+def generate_addresses(n):
     addresses = []
 
-    for address in range(0, 128):
-        random_wallet = str(randint(0, 115792089237316195423570985008687907852837564279074904382605163141518161494337))
-        wallet = [sha256(random_wallet), pubtoaddr(privtopub(sha256(random_wallet)))]
+    for address in range(0, n):
+        raw_private_key = ''.join(['%x' % random.randrange(16) for x in range(0, 64)])
+        wallet = [wif_uncompressed('80', raw_private_key), pubtoaddr(privtopub(raw_private_key))]
         addresses.append(wallet)
 
     return addresses
 
 
-def create_url(addresses):
+def create_url(addresses, n):
     public_keys = ""
 
-    for i in range(0, 128):
+    for i in range(0, n):
         public_keys += addresses[i][1]
 
-        if i < 127:
+        if i < n - 1:
             public_keys += "|"
 
     url = "https://blockchain.info/balance?active=" + public_keys
@@ -70,8 +89,8 @@ class Th(Thread):
 
         while True:
             try:
-                addresses = generate_addresses()
-                url = create_url(addresses)
+                addresses = generate_addresses(n)
+                url = create_url(addresses, n)
 
                 req2 = requests.get(url)
                 if req2.status_code == 200:
@@ -80,14 +99,14 @@ class Th(Thread):
                     addresses2 = json.loads(content2.decode("utf-8"))
                     for xy in addresses2:
                         if addresses2['%s' % xy]['final_balance'] != 0:
-                            for xyz in range(0, 128):
+                            for xyz in range(0, n):
                                 if addresses[xyz][1] == xy:
                                     output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
                                     print(output)
                                     write_logs("keys", output)
                         if addresses2['%s' % xy]['total_received'] != 0:
-                            for xyz in range(0, 128):
+                            for xyz in range(0, n):
                                 if addresses[xyz][1] == xy:
                                     output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
                                         xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
@@ -96,7 +115,7 @@ class Th(Thread):
                     total += 128
 
                 else:
-                    print("Error - %s" % url)
+                    print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
 
             except TimeoutError:
                 output = ("%s - ERROR - TimeoutError - URL: %s" % (ctime(), url))
@@ -104,7 +123,7 @@ class Th(Thread):
                 write_logs("error", output)
 
 
-for x in range(0, 4):
+for x in range(0, 1):
     a = Th(x)
     a.start()
 
