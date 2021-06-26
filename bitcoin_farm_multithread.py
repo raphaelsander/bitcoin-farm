@@ -4,6 +4,7 @@ from threading import Thread
 from time import ctime
 from bitcoin import *
 from os import mkdir
+import multiprocessing
 import requests
 import urllib3
 import base58
@@ -21,12 +22,11 @@ b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 # Disabled Insecure Request Warning
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-try:
-    mkdir("logs")
-    print("%s - INFO - The directory logs created" % ctime())
-
-except FileExistsError:
-    print("%s - INFO - The directory logs exist" % ctime())
+# Wordlist or Brute Force
+if os.getenv("WORDLIST") is True:
+    wordlist = True
+else:
+    wordlist = False
 
 
 def write_logs(file, output):
@@ -55,15 +55,42 @@ def wif_uncompressed(byte, raw_private_key):
     return wif.decode("utf-8")
 
 
-def generate_addresses(n):
-    addresses = []
+def generate_addresses(q, n, wordlist):
 
-    for address in range(0, n):
-        raw_private_key = ''.join(['%x' % random.randrange(16) for x in range(0, 64)])
-        wallet = [wif_uncompressed('80', raw_private_key), pubtoaddr(privtopub(raw_private_key))]
-        addresses.append(wallet)
+    if wordlist is True:
 
-    return addresses
+        with open("E:/rockyou.txt", errors="ignore") as fp:
+            file_name = os.path.basename(fp.name)
+            print("%s - File %s opened" % (ctime(), file_name))
+
+            addresses = []
+
+            for i, line in enumerate(fp):
+
+                while q.qsize() >= 20:
+                    time.sleep(1)
+
+                raw_private_key = line
+
+                if len(addresses) < n:
+                    wallet = [wif_uncompressed('80', sha256(raw_private_key)), pubtoaddr(privtopub(sha256(raw_private_key)))]
+                    addresses.append(wallet)
+
+                else:
+                    q.put(addresses)
+                    addresses = []
+
+    else:
+        while True:
+            if q.qsize() < 5:
+                addresses = []
+
+                for address in range(0, n):
+                    raw_private_key = ''.join(['%x' % random.randrange(16) for x in range(0, 64)])
+                    wallet = [wif_uncompressed('80', raw_private_key), pubtoaddr(privtopub(raw_private_key))]
+                    addresses.append(wallet)
+
+                q.put(addresses)
 
 
 def create_url(addresses, n):
@@ -85,48 +112,63 @@ class Th(Thread):
         self.num = num
 
     def run(self):
-        global total
-
         while True:
-            try:
-                addresses = generate_addresses(n)
-                url = create_url(addresses, n)
-
-                req2 = requests.get(url)
-                if req2.status_code == 200:
-                    content2 = req2.content
-
-                    addresses2 = json.loads(content2.decode("utf-8"))
-                    for xy in addresses2:
-                        if addresses2['%s' % xy]['final_balance'] != 0:
-                            for xyz in range(0, n):
-                                if addresses[xyz][1] == xy:
-                                    output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
-                                        xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
-                                    print(output)
-                                    write_logs("keys", output)
-                        if addresses2['%s' % xy]['total_received'] != 0:
-                            for xyz in range(0, n):
-                                if addresses[xyz][1] == xy:
-                                    output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
-                                        xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
-                                    print(output)
-                                    write_logs("keys", output)
-                    total += 128
-
-                else:
-                    print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
-
-            except TimeoutError:
-                output = ("%s - ERROR - TimeoutError - URL: %s" % (ctime(), url))
-                print(output)
-                write_logs("error", output)
+            time.sleep(10)
+            print("%s - INFO - Total verified: %s" % (ctime(), total))
 
 
-for x in range(0, 1):
-    a = Th(x)
+if __name__ == '__main__':
+    try:
+        mkdir("logs")
+        print("%s - INFO - The directory logs created" % ctime())
+
+    except FileExistsError:
+        print("%s - INFO - The directory logs exist" % ctime())
+
+    a = Th(1)
     a.start()
 
-while True:
-    time.sleep(10)
-    print("%s - INFO - Total verified: %s" % (ctime(), total))
+    q = multiprocessing.Queue()
+    p = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+    p.start()
+
+    while True:
+        addresses = q.get()
+
+        url = create_url(addresses, n)
+
+        req2 = requests.get(url)
+        if req2.status_code == 200:
+            content2 = req2.content
+
+            addresses2 = json.loads(content2.decode("utf-8"))
+            for xy in addresses2:
+
+                if addresses2['%s' % xy]['final_balance'] != 0:
+
+                    for xyz in range(0, n):
+
+                        if addresses[xyz][1] == xy:
+
+                            output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
+                                xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
+
+                            print(output)
+                            write_logs("keys", output)
+
+                if addresses2['%s' % xy]['total_received'] != 0:
+
+                    for xyz in range(0, n):
+
+                        if addresses[xyz][1] == xy:
+
+                            output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
+                                xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
+
+                            print(output)
+                            write_logs("keys", output)
+
+            total += n
+
+        else:
+            print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
