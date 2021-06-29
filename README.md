@@ -37,6 +37,7 @@ $ docker build -t bitcoinfarm .
 ```bash
 $ docker run -d \
   --name bitcoinfarm \
+  -e PYTHONUNBUFFERED=1 \
   --mount source=bitcoinfarm_volume,target=/usr/src/app/logs \
   bitcoinfarm
 ```
