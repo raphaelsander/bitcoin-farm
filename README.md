@@ -30,8 +30,18 @@ $ docker volume create bitcoinfarm_volume
 
 2 - Build the image
 ```bash
-$ docker build -t bitcoinfarm .
+$ docker buildx build -t bitcoinfarm --platform=linux/amd64 .
 ```
+
+*To amd64 platform.*
+
+or
+
+```bash
+$ docker buildx build -t bitcoinfarm --platform=linux/arm/v7 .
+```
+
+*To arm32v7 platform.*
 
 3 - Run the container:
 ```bash
