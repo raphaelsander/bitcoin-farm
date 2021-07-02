@@ -133,42 +133,46 @@ if __name__ == '__main__':
     p.start()
 
     while True:
-        addresses = q.get()
+        try:
+            addresses = q.get()
 
-        url = create_url(addresses, n)
+            url = create_url(addresses, n)
 
-        req2 = requests.get(url)
-        if req2.status_code == 200:
-            content2 = req2.content
+            req2 = requests.get(url)
+            if req2.status_code == 200:
+                content2 = req2.content
 
-            addresses2 = json.loads(content2.decode("utf-8"))
-            for xy in addresses2:
+                addresses2 = json.loads(content2.decode("utf-8"))
+                for xy in addresses2:
 
-                if addresses2['%s' % xy]['final_balance'] != 0:
+                    if addresses2['%s' % xy]['final_balance'] != 0:
 
-                    for xyz in range(0, n):
+                        for xyz in range(0, n):
 
-                        if addresses[xyz][1] == xy:
+                            if addresses[xyz][1] == xy:
 
-                            output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
-                                xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
+                                output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
+                                    xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
 
-                            print(output)
-                            write_logs("keys", output)
+                                print(output)
+                                write_logs("keys", output)
 
-                if addresses2['%s' % xy]['total_received'] != 0:
+                    if addresses2['%s' % xy]['total_received'] != 0:
 
-                    for xyz in range(0, n):
+                        for xyz in range(0, n):
 
-                        if addresses[xyz][1] == xy:
+                            if addresses[xyz][1] == xy:
 
-                            output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
-                                xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
+                                output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
+                                    xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
 
-                            print(output)
-                            write_logs("keys", output)
+                                print(output)
+                                write_logs("keys", output)
 
-            total += n
+                total += n
 
-        else:
-            print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
+            else:
+                print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
+
+        except:
+            pass
