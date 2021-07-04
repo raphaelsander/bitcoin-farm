@@ -87,10 +87,52 @@ def generate_addresses(q, n, wordlist):
 
                 for address in range(0, n):
                     raw_private_key = ''.join(['%x' % random.randrange(16) for x in range(0, 64)])
-                    wallet = [wif_uncompressed('80', raw_private_key), pubtoaddr(privtopub(raw_private_key))]
+                    wallet = [raw_private_key, pubtoaddr(privtopub(raw_private_key))]
                     addresses.append(wallet)
 
                 q.put(addresses)
+
+
+def verify_addresses(addresses, n):
+    url = create_url(addresses, n)
+
+    try:
+        req2 = requests.get(url)
+        if req2.status_code == 200:
+            content2 = req2.content
+
+            addresses2 = json.loads(content2.decode("utf-8"))
+            for xy in addresses2:
+
+                if addresses2['%s' % xy]['final_balance'] != 0:
+
+                    for xyz in range(0, n):
+
+                        if addresses[xyz][1] == xy:
+                            output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
+                                xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
+
+                            print(output)
+                            write_logs("keys", output)
+
+                if addresses2['%s' % xy]['total_received'] != 0:
+
+                    for xyz in range(0, n):
+
+                        if addresses[xyz][1] == xy:
+                            output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
+                                xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
+
+                            print(output)
+                            write_logs("keys", output)
+            return True
+
+        else:
+            print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
+            return False
+
+    except:
+        return False
 
 
 def create_url(addresses, n):
@@ -129,50 +171,16 @@ if __name__ == '__main__':
     a.start()
 
     q = multiprocessing.Queue()
+
+    r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+    r.start()
+
     p = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
     p.start()
 
+    s = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+    s.start()
+
     while True:
-        try:
-            addresses = q.get()
-
-            url = create_url(addresses, n)
-
-            req2 = requests.get(url)
-            if req2.status_code == 200:
-                content2 = req2.content
-
-                addresses2 = json.loads(content2.decode("utf-8"))
-                for xy in addresses2:
-
-                    if addresses2['%s' % xy]['final_balance'] != 0:
-
-                        for xyz in range(0, n):
-
-                            if addresses[xyz][1] == xy:
-
-                                output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
-                                    xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
-
-                                print(output)
-                                write_logs("keys", output)
-
-                    if addresses2['%s' % xy]['total_received'] != 0:
-
-                        for xyz in range(0, n):
-
-                            if addresses[xyz][1] == xy:
-
-                                output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
-                                    xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
-
-                                print(output)
-                                write_logs("keys", output)
-
-                total += n
-
-            else:
-                print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
-
-        except:
-            pass
+        if verify_addresses(q.get(), n):
+            total += n
