@@ -2,5 +2,5 @@ requests~=2.25.1
 urllib3~=1.26.4
 bs4~=0.0.1
 beautifulsoup4~=4.9.3
-bitcoin~=1.1.42
 base58~=2.1.0
+cryptos~=1.36

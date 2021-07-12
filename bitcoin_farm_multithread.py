@@ -2,7 +2,7 @@
 
 from threading import Thread
 from time import ctime
-from bitcoin import *
+from cryptos import *
 from os import mkdir
 import multiprocessing
 import requests
@@ -86,7 +86,7 @@ def generate_addresses(q, n, wordlist):
                 addresses = []
 
                 for address in range(0, n):
-                    raw_private_key = ''.join(['%x' % random.randrange(16) for x in range(0, 64)])
+                    raw_private_key = random_electrum_seed()
                     wallet = [raw_private_key, pubtoaddr(privtopub(raw_private_key))]
                     addresses.append(wallet)
 
