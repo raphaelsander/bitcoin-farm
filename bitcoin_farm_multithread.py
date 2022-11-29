@@ -60,7 +60,7 @@ def generate_addresses(q, n, wordlist):
 
     if wordlist is True:
 
-        with open("E:/rockyou.txt", errors="ignore") as fp:
+        with open(os.getenv("WORDLIST_PATH"), errors="ignore") as fp:
             file_name = os.path.basename(fp.name)
             print("%s - File %s opened" % (ctime(), file_name))
 
