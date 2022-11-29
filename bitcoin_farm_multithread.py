@@ -3,12 +3,12 @@
 from threading import Thread
 from time import ctime
 from cryptos import *
-from os import mkdir
 import multiprocessing
 import requests
 import urllib3
 import base58
 import json
+import os
 
 
 # Number of wallets verify per request to blockchain.info API.
@@ -23,7 +23,8 @@ b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Wordlist or Brute Force
-if os.getenv("WORDLIST") is True:
+
+if (os.getenv("WORDLIST", 'False').lower() in ('true', '1', 't')) is True:
     wordlist = True
 else:
     wordlist = False
@@ -161,7 +162,7 @@ class Th(Thread):
 
 if __name__ == '__main__':
     try:
-        mkdir("logs")
+        os.mkdir("logs")
         print("%s - INFO - The directory logs created" % ctime())
 
     except FileExistsError:
