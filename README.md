@@ -5,11 +5,11 @@
 Bitcoin Farm is a simple script in Python what test you lucky.  
 We are able to understand the number of Bitcoin wallet in the world is equal to:
 
-**(964934076977634961863091541739065898773646368992290869855043026179318012451 - 1) * 128 + 127**
+(964934076977634961863091541739065898773646368992290869855043026179318012451 - 1) * 128 + 127
 
 or
 
-**~1,23 * (10 ^ 77)**
+~1,23 * (10 ^ 77)
 
 Reference: <https://allbitcoinprivatekeys.com/>
 
@@ -24,13 +24,15 @@ Write your answers in this [issue](https://github.com/raphaelsander/Bitcoin-Farm
 ## To run in Docker container
 
 1 - Create a Bitcoin Farm volume to save the wallet with money and transactions:
+
 ```bash
-$ docker volume create bitcoinfarm_volume
+docker volume create bitcoinfarm_volume
 ```
 
 2 - Build the image
+
 ```bash
-$ docker buildx build -t bitcoinfarm --platform=linux/amd64 .
+docker buildx build -t bitcoinfarm --platform=linux/amd64 .
 ```
 
 *To amd64 platform.*
@@ -38,16 +40,19 @@ $ docker buildx build -t bitcoinfarm --platform=linux/amd64 .
 or
 
 ```bash
-$ docker buildx build -t bitcoinfarm --platform=linux/arm/v7 .
+docker buildx build -t bitcoinfarm --platform=linux/arm/v7 .
 ```
 
 *To arm32v7 platform.*
 
 3 - Run the container:
+
 ```bash
-$ docker run -d \
+docker run -d \
   --name bitcoinfarm \
   -e PYTHONUNBUFFERED=1 \
-  --mount source=bitcoinfarm_volume,target=/usr/src/app/logs \
+  -e WORDLIST=true \
+  -e WORDLIST_PATH=/wordlist/rockyou.txt \
+  -v /d/Bitcoin-Farm/wordlist:/wordlist \
   bitcoinfarm
 ```
