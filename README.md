@@ -47,12 +47,41 @@ docker buildx build -t bitcoinfarm --platform=linux/arm/v7 .
 
 3 - Run the container:
 
+3.1 - Linux
+
 ```bash
 docker run -d \
   --name bitcoinfarm \
   -e PYTHONUNBUFFERED=1 \
-  -e WORDLIST=true \
-  -e WORDLIST_PATH=/wordlist/rockyou.txt \
-  -v /d/Bitcoin-Farm/wordlist:/wordlist \
+  -e WORDLIST="true" \
+  -e WORDLIST_PATH="/wordlist/rockyou.txt" \
+  -v bitcoinfarm_volume:/usr/src/app/logs \
+  -v $(pwd)/wordlist:/wordlist \
+  bitcoinfarm
+```
+
+3.2 - Windows (CMD)
+
+```cmd
+docker run -d ^
+  --name bitcoinfarm ^
+  -e PYTHONUNBUFFERED=1 ^
+  -e WORDLIST="true" ^
+  -e WORDLIST_PATH="/wordlist/rockyou.txt" ^
+  -v bitcoinfarm_volume:/usr/src/app/logs ^
+  -v %CD%\wordlist:/wordlist ^
+  bitcoinfarm
+```
+
+3.3 - Windows (PowerShell)
+
+```ps1
+docker run -d `
+  --name bitcoinfarm `
+  -e PYTHONUNBUFFERED=1 `
+  -e WORDLIST="true" `
+  -e WORDLIST_PATH="/wordlist/rockyou.txt" `
+  -v bitcoinfarm_volume:/usr/src/app/logs `
+  -v ${pwd}/wordlist:/wordlist `
   bitcoinfarm
 ```
