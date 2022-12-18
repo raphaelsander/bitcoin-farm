@@ -173,14 +173,19 @@ if __name__ == '__main__':
 
     q = multiprocessing.Queue()
 
-    r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-    r.start()
+    if wordlist is True:
+        r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+        r.start()
+        
+    else:
+        r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+        r.start()
 
-    p = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-    p.start()
+        p = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+        p.start()
 
-    s = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-    s.start()
+        s = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
+        s.start()
 
     while True:
         if verify_addresses(q.get(), n):
