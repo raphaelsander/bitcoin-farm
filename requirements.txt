@@ -4,3 +4,4 @@ bs4~=0.0.1
 beautifulsoup4~=4.9.3
 base58~=2.1.0
 cryptos~=1.36
+bitcoinlib~=0.6.15
