@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# Library documentation: https://bitcoinlib.readthedocs.io/
+from bitcoinlib.keys import Key, HDKey
 from threading import Thread
 from time import ctime
 from cryptos import *
@@ -12,8 +14,8 @@ import os
 
 
 # Number of wallets verify per request to blockchain.info API.
-# Number maximum is 138 and minimum is 1.
-n = 138
+# Number maximum is 137 and minimum is 1.
+n = 137
 
 # Don't change the values below
 total = 0
@@ -23,7 +25,6 @@ b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Wordlist or Brute Force
-
 if (os.getenv("WORDLIST", 'False').lower() in ('true', '1', 't')) is True:
     wordlist = True
 else:
@@ -44,16 +45,17 @@ def write_logs(file, output):
     f.close()
 
 
-def wif_uncompressed(byte, raw_private_key):
-    extended_key = byte+raw_private_key
+def wif_compressed(raw_private_key):
+    private_key_hex = sha256(raw_private_key)
+    wallet = HDKey(private_key_hex)
 
-    first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key[:66])).hexdigest()
-    second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+    # Private key in WIF (Wallet Import Format) compressed and encoded in Base58
+    private_key_wif = wallet.wif_key()
+    
+    # Public legacy address in compressed format encoded in Base58
+    public_key_address = wallet.address()
 
-    final_key = extended_key[:66]+second_sha256[:8]
-
-    wif = base58.b58encode(binascii.unhexlify(final_key))
-    return wif.decode("utf-8")
+    return [private_key_wif, public_key_address]
 
 
 def generate_addresses(q, n, wordlist):
@@ -66,15 +68,13 @@ def generate_addresses(q, n, wordlist):
 
             addresses = []
 
-            for i, line in enumerate(fp):
+            for _, raw_private_key in enumerate(fp):
 
                 while q.qsize() >= 20:
                     time.sleep(1)
 
-                raw_private_key = line
-
                 if len(addresses) < n:
-                    wallet = [wif_uncompressed('80', sha256(raw_private_key)), pubtoaddr(privtopub(sha256(raw_private_key)))]
+                    wallet = wif_compressed(raw_private_key)
                     addresses.append(wallet)
 
                 else:
@@ -86,7 +86,7 @@ def generate_addresses(q, n, wordlist):
             if q.qsize() < 5:
                 addresses = []
 
-                for address in range(0, n):
+                for _ in range(0, n):
                     raw_private_key = random_electrum_seed()
                     wallet = [raw_private_key, pubtoaddr(privtopub(raw_private_key))]
                     addresses.append(wallet)
