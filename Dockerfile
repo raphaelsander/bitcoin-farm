@@ -1,9 +1,8 @@
-FROM python:3-slim
+FROM python:3
 
 WORKDIR /usr/src/app
 
 COPY . .
-RUN pip install --no-cache-dir -r requirements.txt && \
-    chmod 755 docker-entrypoint.sh
+RUN pip install --no-cache-dir -r requirements.txt
 
-CMD [ "./docker-entrypoint.sh" ]
+ENTRYPOINT ["python", "bitcoin-farm.py"]

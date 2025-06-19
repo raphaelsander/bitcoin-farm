@@ -2,6 +2,5 @@
 **
 
 # Allow important files
-!bitcoin_farm_multithread.py
-!docker-entrypoint.sh
+!bitcoin-farm.py
 !requirements.txt
