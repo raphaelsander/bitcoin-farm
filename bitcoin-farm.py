@@ -1,192 +1,453 @@
 #!/usr/bin/python3
 
 # Library documentation: https://bitcoinlib.readthedocs.io/
-from bitcoinlib.keys import Key, HDKey
-from threading import Thread
-from time import ctime
-from cryptos import *
-import multiprocessing
+from bitcoinlib.keys import HDKey
+from bitcoinlib import mnemonic
+# Library documentation: https://docs.python.org/3/library/logging.html
+import logging
+from multiprocessing import Queue, Process, current_process
 import requests
-import urllib3
-import base58
 import json
-import os
+import base64
+from time import sleep, time
+from hashlib import sha256
+import argparse
+import zipfile
 
 
-# Number of wallets verify per request to blockchain.info API.
-# Number maximum is 137 and minimum is 1.
-n = 137
+# Logging configuration
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
-# Don't change the values below
-total = 0
-b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-
-# Disabled Insecure Request Warning
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-# Wordlist or Brute Force
-if (os.getenv("WORDLIST", 'False').lower() in ('true', '1', 't')) is True:
-    wordlist = True
-else:
-    wordlist = False
+start_time = time()
+total_verified = 0
 
 
-def write_logs(file, output):
-    if file == "error":
-        f = open("logs/error.txt", "a")
-    elif file == "keys":
-        f = open("logs/keys.txt", "a")
-    else:
-        print("%s - ERROR - Log file don't found: %s" % (ctime(), file))
-        return
+def consume_wordlist(wordlist_queue, addresses_queue, wordlist):
+    pos_file = "position.txt"
 
-    output = output + "\n"
-    f.write(output)
-    f.close()
+    if zipfile.is_zipfile(wordlist):
+        zip_filename = wordlist
+        inner_filename = "wordlist.txt"
+        pos_file = "position.txt"
 
+        try:
+            last_position = int(open(pos_file).read())
+        except (FileNotFoundError, ValueError):
+            last_position = 0
 
-def wif_compressed(raw_private_key):
-    private_key_hex = sha256(raw_private_key)
-    wallet = HDKey(private_key_hex)
+        try:
+            with zipfile.ZipFile(zip_filename, 'r') as zip_file:
+                with zip_file.open(inner_filename, 'r') as file:
+                    file.seek(last_position)
+                    for line in file:
+                        word = line.strip().encode('utf-8')
+                        
+                        status = {
+                            "last_position": last_position,
+                            "word": word,
+                            "size": len(line)
+                        }
+                        logger.debug(status)
 
-    # Private key in WIF (Wallet Import Format) compressed and encoded in Base58
-    private_key_wif = wallet.wif_key()
-    
-    # Public legacy address in compressed format encoded in Base58
-    public_key_address = wallet.address()
+                        while wordlist_queue.qsize() > 10000:
+                            sleep(1)
+                        wordlist_queue.put(word)
 
-    return [private_key_wif, public_key_address]
-
-
-def generate_addresses(q, n, wordlist):
-
-    if wordlist is True:
-
-        with open(os.getenv("WORDLIST_PATH"), errors="ignore") as fp:
-            file_name = os.path.basename(fp.name)
-            print("%s - File %s opened" % (ctime(), file_name))
-
-            addresses = []
-
-            for _, raw_private_key in enumerate(fp):
-
-                while q.qsize() >= 20:
-                    time.sleep(1)
-
-                if len(addresses) < n:
-                    wallet = wif_compressed(raw_private_key)
-                    addresses.append(wallet)
-
-                else:
-                    q.put(addresses)
-                    addresses = []
-
-    else:
-        while True:
-            if q.qsize() < 5:
-                addresses = []
-
-                for _ in range(0, n):
-                    raw_private_key = random_electrum_seed()
-                    wallet = [raw_private_key, pubtoaddr(privtopub(raw_private_key))]
-                    addresses.append(wallet)
-
-                q.put(addresses)
-
-
-def verify_addresses(addresses, n):
-    url = create_url(addresses, n)
+                        last_position += len(line)
+                
+        except KeyboardInterrupt:
+            with open(pos_file, "w") as pos_file:
+                pos_file.write(str(last_position))
+            exit(0)
 
     try:
-        req2 = requests.get(url)
-        if req2.status_code == 200:
-            content2 = req2.content
+        last_position = int(open(pos_file).read())
+    except (FileNotFoundError, ValueError):
+        last_position = 0
 
-            addresses2 = json.loads(content2.decode("utf-8"))
-            for xy in addresses2:
+    try:
+        # Process each line of the wordlist and add to the wordlist queue to
+        # worker process consume and generate the wallets, but this queue is
+        # limited to 10000 items to avoid high consumption of resources
+        with open(wordlist, 'rb') as file:
+            file.seek(last_position)
+            for line in file:
+                while wordlist_queue.qsize() > 10000:
+                    sleep(1)
+                
+                word = {
+                    "word": line.strip(),
+                    "seek_position": last_position
+                }
 
-                if addresses2['%s' % xy]['final_balance'] != 0:
+                wordlist_queue.put(word)
+                last_position += len(line)
 
-                    for xyz in range(0, n):
+        # This sleep time is to prevent that the end of queue (None) to be added
+        # to addresses queue before start the workers processes.
+        sleep(5)
+        
+        # Wait wordlist queue and addresses queue get empty before send the end
+        # of queue (None) to address queue
+        while not wordlist_queue.empty() or not addresses_queue.empty():
+            sleep(1)
+        
+        # Adding the None to address queue will indicate that the queues are
+        # empty and exit checker process
+        logger.info("wordlist and queues exhausted")
+        logger.debug("sending signal to stop checker process")
+        addresses_queue.put(None)
 
-                        if addresses[xyz][1] == xy:
-                            output = ("PublicKey:%s Balance:%s PrivateKey:%s" % (
-                                xy, addresses2['%s' % xy]['final_balance'], addresses[xyz][0]))
+    except Exception as e:
+        logger.error(f"Error during consume wordlist: {e}")
+    
+    # finally:
+    #     logger.info("KeyboardInterrupt received...")
+    #     with open(pos_file, "w") as pos_file:
+    #         pos_file.write(str(last_position))
+        
+    #     # Wait wordlist queue and addresses queue get empty before send the end
+    #     # of queue (None) to address queue
+    #     while not wordlist_queue.empty() or not addresses_queue.empty():
+    #         sleep(1)
+        
+    #     # Adding the None to address queue will indicate that the queues are
+    #     # empty and exit checker process
+    #     logger.debug("sending signal to stop checker process")
+    #     addresses_queue.put(None)
+        
+    #     exit(0)
 
-                            print(output)
-                            write_logs("keys", output)
 
-                if addresses2['%s' % xy]['total_received'] != 0:
+def generate_addresses(addresses_queue):
+    password=''
+    while True:
+        if addresses_queue.qsize() < 4000:
+            passphrase = mnemonic.Mnemonic(language='english').generate(
+                strength=128,
+                add_checksum=True
+            )
 
-                    for xyz in range(0, n):
+            seed = mnemonic.Mnemonic().to_seed(passphrase, password)
+            
+            wallet = HDKey.from_seed(
+                seed,
+                witness_type='segwit'
+            )
 
-                        if addresses[xyz][1] == xy:
-                            output = ("PublicKey:%s Received:%s PrivateKey:%s" % (
-                                xy, addresses2['%s' % xy]['total_received'], addresses[xyz][0]))
+            for address_index in range(0, 20):
 
-                            print(output)
-                            write_logs("keys", output)
-            return True
+                path = f"m/84'/0'/0'/0/{address_index}"
+                
+                subkey = wallet.subkey_for_path(path)
+
+                public_key = subkey.subkey_for_path(path).address()
+                private_key = subkey.subkey_for_path(path).wif_key()
+                
+                address = {
+                    "passphrase": passphrase,
+                    "password": password,
+                    "seed": seed.hex(),
+                    "path": path,
+                    "private_key": private_key,
+                    "public_key": public_key
+                }
+
+                logger.debug(address)
+
+                addresses_queue.put(address)
+        else:
+            sleep(1)
+
+
+def generate_wallets(wordlist_queue, addresses_queue, derivation_path):
+    try:
+        while True:
+            while addresses_queue.qsize() > 10000:
+                sleep(1)
+            if wordlist_queue.empty():
+                sleep(1)
+            else:
+                word = wordlist_queue.get()
+                raw_private_key = word["word"]
+                seek_position = word["seek_position"]
+                private_key_hex = sha256(raw_private_key).digest()
+
+                addr_type = {
+                    "p2pkh": {
+                        "type": "legacy",
+                        "path": "m/44'/0'/0'",
+                        "electrum_type": "p2pkh"
+                    },
+                    "p2sh": {
+                        "type": "p2sh-segwit",
+                        "path": "m/49'/0'/0'",
+                        "electrum_type": "p2wpkh-p2sh"
+                    },
+                    "p2wphk": {
+                        "type": "segwit",
+                        "path": "m/84'/0'/0'",
+                        "electrum_type": "p2wpkh"
+                    }
+                }
+
+                for addr_type_index in addr_type:
+
+                    wallet = HDKey(
+                        private_key_hex,
+                        witness_type=f"{addr_type[addr_type_index]['type']}"
+                    )
+
+                    if derivation_path:
+
+                        for addr_index in range(0, 20):
+
+                            path = f"{addr_type[addr_type_index]['path']}/0/{addr_index}"
+                            subkey = wallet.subkey_for_path(path)
+
+                            public_key = subkey.subkey_for_path(path).address()
+                            private_key = subkey.subkey_for_path(path).wif_key()
+                            
+                            address = {
+                                "passphrase": raw_private_key,
+                                "seek_position": seek_position,
+                                "path": path,
+                                "private_key": private_key,
+                                "public_key": public_key
+                            }
+
+                            logger.debug(address)
+
+                            addresses_queue.put(address)
+
+                    # Private key in WIF (Wallet Import Format) compressed and encoded in Base58
+                    private_key_wif = wallet.wif_key()
+                    
+                    # Public legacy address in compressed format encoded in Base58
+                    public_key_address = wallet.address()
+
+                    address = {
+                        "passphrase": raw_private_key,
+                        "seek_position": seek_position,
+                        "private_key": f"{addr_type[addr_type_index]['electrum_type']}:{private_key_wif}",
+                        "public_key": public_key_address
+                    }
+
+                    logger.debug(address)
+
+                    addresses_queue.put(address)
+
+    except KeyboardInterrupt:
+        print(f"generator process interrupted ({current_process().name})")
+
+
+def get_address_balance(public_keys):
+    url = "https://blockchain.info/balance?active=" + "|".join(public_keys)
+    response = requests.get(url)
+    return response
+
+
+def save_filtered_addresses(filtered_address):
+    def custom_serializer(obj):
+        if isinstance(obj, bytes):
+            return base64.b64encode(obj).decode('utf-8')
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    
+    try:
+        json_dump = json.dumps(filtered_address, default=custom_serializer)
+        f = open("keys.txt", "a")
+        f.write(f"{json_dump}\n")
+        f.close()
+    
+    except TypeError as e:
+        print(f"Erro: {e}")
+
+
+def check_public_keys(addresses):
+    
+    public_keys = []
+    for address in addresses:
+        public_keys.append(address['public_key'])
+    
+    try:
+        response = get_address_balance(public_keys)
+        
+        if response.status_code == 200:
+            content = response.content
+
+            addresses_status = json.loads(content.decode("utf-8"))
+            
+            filtered_addresses = [
+                addr for addr in addresses
+                if addresses_status[
+                    addr['public_key']
+                ]['final_balance'] != 0 or
+                addresses_status[
+                    addr['public_key']
+                ]['total_received'] != 0 or
+                addresses_status[
+                    addr['public_key']
+                ]['n_tx'] != 0
+            ]
+
+            if filtered_addresses:
+                for filtered_address in filtered_addresses:
+                    logger.info(filtered_address)
+                    save_filtered_addresses(filtered_address)
 
         else:
-            print("%s - Error - Status Code: %s - URL: %s" % (ctime(), req2.status_code, url))
-            return False
-
-    except:
-        return False
-
-
-def create_url(addresses, n):
-    public_keys = ""
-
-    for i in range(0, n):
-        public_keys += addresses[i][1]
-
-        if i < n - 1:
-            public_keys += "|"
-
-    url = "https://blockchain.info/balance?active=" + public_keys
-    return url
+            logger.warning(response, response.content)
+    
+    except Exception as e:
+        logger.warning(e)
 
 
-class Th(Thread):
-    def __init__(self, num):
-        Thread.__init__(self)
-        self.num = num
+def show_status(total_verified, addresses_queue_size): 
+    check_per_seconds = total_verified / (time() - start_time)
+    status = {
+        "total": total_verified,
+        "check_per_second": check_per_seconds,
+        "queue_size": addresses_queue_size
+    }
 
-    def run(self):
+    logger.info(status)
+
+
+def check_addresses(addresses_queue):
+    try:
+        max_addresses = 137
+        total_verified = 0
+        count = 0
+        pos_file = "position.txt"
+
         while True:
-            time.sleep(10)
-            print("%s - INFO - Total verified: %s" % (ctime(), total))
+            addresses = []
+            
+            for _ in range(0, max_addresses):
+                while addresses_queue.empty():
+                    sleep(1)
+                
+                address = addresses_queue.get()
+                
+                # If None, indicates that queue is done
+                if address == None:
+                    # If addresses is empty no request to blockchain.info is needed
+                    if addresses:
+                        check_public_keys(addresses)
+                        show_status(len(addresses), addresses_queue.qsize())
+                        
+                        logger.info(
+                            f'stopping checker process '
+                            f'(name: {current_process().name}, '
+                            f'pid: {current_process().pid})'
+                        )
+
+                        exit(0)
+                else:
+                    addresses.append(address)
+            
+            check_public_keys(addresses)
+
+            total_verified += len(addresses)
+            count += 1
+            if count % 100 == 0:
+                with open(pos_file, "w") as file:
+                    file.write(str(address["seek_position"]))
+                show_status(total_verified, addresses_queue.qsize())
+    
+    except KeyboardInterrupt:
+        print(f"checker process interrupted ({current_process().name})")
+
+
+def create_workers(wordlist_queue, addresses_queue, derivation_path):
+
+    num_workers = 4
+    workers_processes = []
+
+    for i in range(num_workers):
+        process = Process(
+            name=f'worker_wallet_creator_{i}',
+            target=generate_wallets,
+            args=(wordlist_queue, addresses_queue, derivation_path)
+        )
+        process.start()
+        workers_processes.append(process)
+    
+    return workers_processes
+
+
+def create_checker(addresses_queue):
+    process = Process(
+        name='checker_addresses',
+        target=check_addresses,
+        args=(addresses_queue,)
+    )
+    process.start()
+
+    return process
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog='bitcoin-farm',
+        description='This software bruteforce Bitcoin wallets and check if was used before',
+        epilog='Donation: 1MZhK28TfBVGunXqkarCu7BSCUHXrEQbcV'
+    )
+
+    parser.add_argument(
+        '--wordlist',
+        help='wordlist path'
+    )
+    parser.add_argument(
+        '--derivation-path',
+        action = 'store_true',
+        help='verifiy derivation keys'
+    )
+
+    args = parser.parse_args()
+
+    addresses_queue = Queue()
+    wordlist_queue = Queue()
+
+    workers_processes = create_workers(
+        wordlist_queue,
+        addresses_queue,
+        args.derivation_path
+    )
+    checker_process = create_checker(addresses_queue)
+
+    consume_wordlist_process = Process(
+        name='consume_wordlist_process',
+        target=consume_wordlist,
+        args=(wordlist_queue, addresses_queue, args.wordlist)
+    )
+    consume_wordlist_process.start()
+
+    try:
+        consume_wordlist_process.join()
+        checker_process.join()
+
+        for process in workers_processes:
+            logger.info(f"stopping worker process (name: {process.name}, pid: {process.pid})")
+            process.terminate()
+    
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, terminating processes.")
+        
+        checker_process.terminate()
+        consume_wordlist_process.terminate()
+        for process in workers_processes:
+            process.terminate()
+        
+        checker_process.join()
+        consume_wordlist_process.join()
+        for process in workers_processes:
+            process.join()
 
 
 if __name__ == '__main__':
-    try:
-        os.mkdir("logs")
-        print("%s - INFO - The directory logs created" % ctime())
-
-    except FileExistsError:
-        print("%s - INFO - The directory logs exist" % ctime())
-
-    a = Th(1)
-    a.start()
-
-    q = multiprocessing.Queue()
-
-    if wordlist is True:
-        r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-        r.start()
-        
-    else:
-        r = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-        r.start()
-
-        p = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-        p.start()
-
-        s = multiprocessing.Process(name='generate_addresses', target=generate_addresses, args=(q, n, wordlist))
-        s.start()
-
-    while True:
-        if verify_addresses(q.get(), n):
-            total += n
+    main()
