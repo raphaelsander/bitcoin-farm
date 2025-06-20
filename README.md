@@ -23,13 +23,7 @@ Write your answers in this [issue](https://github.com/raphaelsander/Bitcoin-Farm
 
 ## To run in Docker container
 
-1 - Create a Bitcoin Farm volume to save the wallet with money and transactions:
-
-```bash
-docker volume create bitcoinfarm_volume
-```
-
-2 - Build the image
+1 - Build the image
 
 ```bash
 docker buildx build -t bitcoinfarm --platform=linux/amd64 .
@@ -45,43 +39,31 @@ docker buildx build -t bitcoinfarm --platform=linux/arm/v7 .
 
 *To arm32v7 platform.*
 
-3 - Run the container:
+2 - Run the container:
 
-3.1 - Linux
+2.1 - Linux
 
 ```bash
-docker run -d \
+docker run -d --rm \
   --name bitcoinfarm \
-  -e PYTHONUNBUFFERED=1 \
-  -e WORDLIST="true" \
-  -e WORDLIST_PATH="/wordlist/rockyou.txt" \
-  -v bitcoinfarm_volume:/usr/src/app/logs \
-  -v $(pwd)/wordlist:/wordlist \
-  bitcoinfarm
+  -v ${PWD}:${PWD} \
+  bitcoinfarm --wordlist ${PWD}/wordlist.txt
 ```
 
-3.2 - Windows (CMD)
+2.2 - Windows (CMD)
 
 ```cmd
-docker run -d ^
+docker run -d --rm ^
   --name bitcoinfarm ^
-  -e PYTHONUNBUFFERED=1 ^
-  -e WORDLIST="true" ^
-  -e WORDLIST_PATH="/wordlist/rockyou.txt" ^
-  -v bitcoinfarm_volume:/usr/src/app/logs ^
-  -v %CD%\wordlist:/wordlist ^
-  bitcoinfarm
+  -v %CD%:%CD% ^
+  bitcoinfarm --wordlist %CD%\wordlist.txt
 ```
 
-3.3 - Windows (PowerShell)
+2.3 - Windows (PowerShell)
 
 ```ps1
-docker run -d `
+docker run -d --rm `
   --name bitcoinfarm `
-  -e PYTHONUNBUFFERED=1 `
-  -e WORDLIST="true" `
-  -e WORDLIST_PATH="/wordlist/rockyou.txt" `
-  -v bitcoinfarm_volume:/usr/src/app/logs `
-  -v ${pwd}/wordlist:/wordlist `
-  bitcoinfarm
+  -v ${PWD}:${PWD} `
+  bitcoinfarm --wordlist ${PWD}/wordlist.txt
 ```
