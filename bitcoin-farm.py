@@ -123,48 +123,70 @@ def consume_wordlist(wordlist_queue, addresses_queue, wordlist):
     #     exit(0)
 
 
-def generate_addresses(addresses_queue):
-    password=''
-    while True:
-        if addresses_queue.qsize() < 4000:
-            passphrase = mnemonic.Mnemonic(language='english').generate(
-                strength=128,
-                add_checksum=True
-            )
+def generate_addresses(addresses_queue, derivation_path, depth):
+    try:
+        password='bitcoin'
+        while True:
+            if addresses_queue.qsize() < 4000:
+                passphrase = mnemonic.Mnemonic(language='english').generate(
+                    strength=128,
+                    add_checksum=True
+                )
 
-            seed = mnemonic.Mnemonic().to_seed(passphrase, password)
-            
-            wallet = HDKey.from_seed(
-                seed,
-                witness_type='segwit'
-            )
-
-            for address_index in range(0, 20):
-
-                path = f"m/84'/0'/0'/0/{address_index}"
+                seed = mnemonic.Mnemonic().to_seed(passphrase, password)
                 
-                subkey = wallet.subkey_for_path(path)
+                wallet = HDKey.from_seed(
+                    seed,
+                    witness_type='segwit'
+                )
 
-                public_key = subkey.subkey_for_path(path).address()
-                private_key = subkey.subkey_for_path(path).wif_key()
+                if derivation_path:
+
+                    for address_index in range(0, depth):
+
+                        path = f"m/84'/0'/0'/0/{address_index}"
+                        
+                        subkey = wallet.subkey_for_path(path)
+
+                        public_key = subkey.subkey_for_path(path).address()
+                        private_key = subkey.subkey_for_path(path).wif_key()
+                        
+                        address = {
+                            "passphrase": passphrase,
+                            "password": password,
+                            "seed": seed.hex(),
+                            "path": path,
+                            "private_key": private_key,
+                            "public_key": public_key
+                        }
+
+                        logger.debug(address)
+
+                        addresses_queue.put(address)
+
+                # Private key in WIF (Wallet Import Format) compressed and encoded in Base58
+                private_key_wif = wallet.wif_key()
                 
+                # Public legacy address in compressed format encoded in Base58
+                public_key_address = wallet.address()
+
                 address = {
                     "passphrase": passphrase,
                     "password": password,
-                    "seed": seed.hex(),
-                    "path": path,
-                    "private_key": private_key,
-                    "public_key": public_key
+                    "private_key": f"segwit:{private_key_wif}",
+                    "public_key": public_key_address
                 }
 
                 logger.debug(address)
 
                 addresses_queue.put(address)
-        else:
-            sleep(1)
+            else:
+                sleep(1)
+    except KeyboardInterrupt:
+        print(f"generator process interrupted ({current_process().name})")
 
 
-def generate_wallets(wordlist_queue, addresses_queue, derivation_path):
+def generate_wallets(wordlist_queue, addresses_queue, derivation_path, depth):
     try:
         while True:
             while addresses_queue.qsize() > 10000:
@@ -204,7 +226,7 @@ def generate_wallets(wordlist_queue, addresses_queue, derivation_path):
 
                     if derivation_path:
 
-                        for addr_index in range(0, 20):
+                        for addr_index in range(0, depth):
 
                             path = f"{addr_type[addr_type_index]['path']}/0/{addr_index}"
                             subkey = wallet.subkey_for_path(path)
@@ -317,7 +339,7 @@ def show_status(total_verified, addresses_queue_size):
     logger.info(status)
 
 
-def check_addresses(addresses_queue):
+def check_addresses(addresses_queue, mnemonic):
     try:
         max_addresses = 137
         total_verified = 0
@@ -355,36 +377,46 @@ def check_addresses(addresses_queue):
             total_verified += len(addresses)
             count += 1
             if count % 100 == 0:
-                with open(pos_file, "w") as file:
-                    file.write(str(address["seek_position"]))
+                if not mnemonic:
+                    with open(pos_file, "w") as file:
+                        file.write(str(address["seek_position"]))
                 show_status(total_verified, addresses_queue.qsize())
     
     except KeyboardInterrupt:
         print(f"checker process interrupted ({current_process().name})")
 
 
-def create_workers(wordlist_queue, addresses_queue, derivation_path):
+def create_workers(addresses_queue=None, derivation_path=None, depth=None, wordlist_queue=None):
 
     num_workers = 4
     workers_processes = []
 
     for i in range(num_workers):
-        process = Process(
-            name=f'worker_wallet_creator_{i}',
-            target=generate_wallets,
-            args=(wordlist_queue, addresses_queue, derivation_path)
-        )
-        process.start()
-        workers_processes.append(process)
+        if wordlist_queue == None:
+            process = Process(
+                name=f'worker_wallet_creator_{i}',
+                target=generate_addresses,
+                args=(addresses_queue, derivation_path, depth)
+            )
+            process.start()
+            workers_processes.append(process)
+        else:
+            process = Process(
+                name=f'worker_wallet_creator_{i}',
+                target=generate_wallets,
+                args=(wordlist_queue, addresses_queue, derivation_path, depth)
+            )
+            process.start()
+            workers_processes.append(process)
     
     return workers_processes
 
 
-def create_checker(addresses_queue):
+def create_checker(addresses_queue, mnemonic=False):
     process = Process(
         name='checker_addresses',
         target=check_addresses,
-        args=(addresses_queue,)
+        args=(addresses_queue, mnemonic)
     )
     process.start()
 
@@ -398,32 +430,81 @@ def main():
         epilog='Donation: 1MZhK28TfBVGunXqkarCu7BSCUHXrEQbcV'
     )
 
-    parser.add_argument(
-        '--wordlist',
+    subparsers = parser.add_subparsers(
+        dest='command',
+        required=True,
+        help='comando a executar'
+    )
+
+    # wordlist command
+    wordlis_parser = subparsers.add_parser(
+        'wordlist',
+        help='process wordlist'
+    )
+    wordlis_parser.add_argument(
+        '--path', required=True,
         help='wordlist path'
     )
-    parser.add_argument(
+    wordlis_parser.add_argument(
         '--derivation-path',
-        action = 'store_true',
+        action='store_true',
         help='verifiy derivation keys'
+    )
+    wordlis_parser.add_argument(
+        '--depth',
+        type=int,
+        default=20,
+        help='derivation keys depth'
+    )
+
+    # mnemonic command
+    mnemonic_parser = subparsers.add_parser(
+        'mnemonic',
+        help='gera ou processa mnemonics'
+    )
+    mnemonic_parser.add_argument(
+        '--derivation-path',
+        action='store_true',
+        help='ativa o uso de derivation path'
+    )
+    mnemonic_parser.add_argument(
+        '--depth',
+        type=int,
+        default=20,
+        help='nível de profundidade para derivação'
     )
 
     args = parser.parse_args()
 
+    if args.command == 'wordlist':
+        process_wordlist(
+            path=args.path,
+            derivation=args.derivation_path,
+            depth=args.depth
+        )
+    elif args.command == 'mnemonic':
+        process_mnemonic(
+            derivation=args.derivation_path,
+            depth=args.depth
+        )
+
+
+def process_wordlist(path, derivation, depth):
     addresses_queue = Queue()
     wordlist_queue = Queue()
 
     workers_processes = create_workers(
-        wordlist_queue,
         addresses_queue,
-        args.derivation_path
+        derivation,
+        depth,
+        wordlist_queue
     )
     checker_process = create_checker(addresses_queue)
 
     consume_wordlist_process = Process(
         name='consume_wordlist_process',
         target=consume_wordlist,
-        args=(wordlist_queue, addresses_queue, args.wordlist)
+        args=(wordlist_queue, addresses_queue, path)
     )
     consume_wordlist_process.start()
 
@@ -448,6 +529,31 @@ def main():
         for process in workers_processes:
             process.join()
 
+def process_mnemonic(derivation, depth):
+    addresses_queue = Queue()
+    workers_processes = create_workers(
+        addresses_queue,
+        derivation,
+        depth
+    )
+    checker_process = create_checker(addresses_queue, mnemonic=True)
+    try:
+        checker_process.join()
+
+        for process in workers_processes:
+            logger.info(f"stopping worker process (name: {process.name}, pid: {process.pid})")
+            process.terminate()
+
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, terminating processes.")
+        
+        checker_process.terminate()
+        for process in workers_processes:
+            process.terminate()
+        
+        checker_process.join()
+        for process in workers_processes:
+            process.join()
 
 if __name__ == '__main__':
     main()
