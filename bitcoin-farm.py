@@ -13,6 +13,7 @@ from time import sleep, time
 from hashlib import sha256
 import argparse
 import zipfile
+import os
 
 
 # Logging configuration
@@ -22,17 +23,16 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+# starting some variables
 start_time = time()
 total_verified = 0
+pos_file = "logs/position.txt"
 
 
-def consume_wordlist(wordlist_queue, addresses_queue, wordlist):
-    pos_file = "position.txt"
-
+def consume_wordlist(wordlist_queue, addresses_queue, wordlist, pos_file):
     if zipfile.is_zipfile(wordlist):
         zip_filename = wordlist
         inner_filename = "wordlist.txt"
-        pos_file = "position.txt"
 
         try:
             last_position = int(open(pos_file).read())
@@ -44,11 +44,9 @@ def consume_wordlist(wordlist_queue, addresses_queue, wordlist):
                 with zip_file.open(inner_filename, 'r') as file:
                     file.seek(last_position)
                     for line in file:
-                        word = line.strip().encode('utf-8')
-                        
-                        status = {
-                            "last_position": last_position,
-                            "word": word,
+                        word = {
+                            "seek_position": last_position,
+                            "word": line.strip(),
                             "size": len(line)
                         }
                         logger.debug(status)
@@ -76,15 +74,17 @@ def consume_wordlist(wordlist_queue, addresses_queue, wordlist):
         with open(wordlist, 'rb') as file:
             file.seek(last_position)
             for line in file:
+                word = {
+                    "seek_position": last_position,
+                    "word": line.strip(),
+                    "size": len(line)
+                }
+                logger.debug(word)
+
                 while wordlist_queue.qsize() > 10000:
                     sleep(1)
-                
-                word = {
-                    "word": line.strip(),
-                    "seek_position": last_position
-                }
-
                 wordlist_queue.put(word)
+
                 last_position += len(line)
 
         # This sleep time is to prevent that the end of queue (None) to be added
@@ -281,7 +281,7 @@ def save_filtered_addresses(filtered_address):
     
     try:
         json_dump = json.dumps(filtered_address, default=custom_serializer)
-        f = open("keys.txt", "a")
+        f = open("logs/keys.txt", "a")
         f.write(f"{json_dump}\n")
         f.close()
     
@@ -339,12 +339,24 @@ def show_status(total_verified, addresses_queue_size):
     logger.info(status)
 
 
-def check_addresses(addresses_queue, mnemonic):
+def create_logs_directory():
+    try:
+        os.mkdir("logs")
+        logger.info("logs directory created")
+
+    except FileExistsError:
+        logger.warning("the directory logs exist")
+    
+    if not os.access("logs", os.W_OK):
+        logger.error("logs directory without write permission")
+        exit(1)
+
+
+def check_addresses(addresses_queue, mnemonic, pos_file):
     try:
         max_addresses = 137
         total_verified = 0
         count = 0
-        pos_file = "position.txt"
 
         while True:
             addresses = []
@@ -416,7 +428,7 @@ def create_checker(addresses_queue, mnemonic=False):
     process = Process(
         name='checker_addresses',
         target=check_addresses,
-        args=(addresses_queue, mnemonic)
+        args=(addresses_queue, mnemonic, pos_file)
     )
     process.start()
 
@@ -424,6 +436,8 @@ def create_checker(addresses_queue, mnemonic=False):
 
 
 def main():
+    create_logs_directory()
+
     parser = argparse.ArgumentParser(
         prog='bitcoin-farm',
         description='This software bruteforce Bitcoin wallets and check if was used before',
@@ -504,7 +518,7 @@ def process_wordlist(path, derivation, depth):
     consume_wordlist_process = Process(
         name='consume_wordlist_process',
         target=consume_wordlist,
-        args=(wordlist_queue, addresses_queue, path)
+        args=(wordlist_queue, addresses_queue, path, pos_file)
     )
     consume_wordlist_process.start()
 
