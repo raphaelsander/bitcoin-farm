@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug using wordlist",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "wordlist", "--path", "wordlist.txt"
+            ]
+        },
+        {
+            "name": "Debug using mnemonic",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "mnemonic"
+            ]
+        }
+    ]
+}
