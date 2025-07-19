@@ -6,7 +6,6 @@ from bitcoinlib import mnemonic
 # Library documentation: https://docs.python.org/3/library/logging.html
 import logging
 from multiprocessing import Queue, Process, current_process
-import requests
 import json
 import base64
 from time import sleep, time
@@ -14,6 +13,11 @@ from hashlib import sha256
 import argparse
 import zipfile
 import os
+
+# Requests libraries for rate limiting and retries
+from requests_ratelimiter import LimiterAdapter
+from requests.packages.urllib3.util.retry import Retry
+from requests import Session
 
 
 # Logging configuration
@@ -268,12 +272,6 @@ def generate_wallets(wordlist_queue, addresses_queue, derivation_path, depth):
         logger.error(f"error during wallet generation: {e}")
 
 
-def get_address_balance(public_keys):
-    url = "https://blockchain.info/balance?active=" + "|".join(public_keys)
-    response = requests.get(url)
-    return response
-
-
 def save_filtered_addresses(filtered_address):
     def custom_serializer(obj):
         if isinstance(obj, bytes):
@@ -290,14 +288,15 @@ def save_filtered_addresses(filtered_address):
         print(f"Erro: {e}")
 
 
-def check_public_keys(addresses):
+def check_public_keys(addresses, session):
     
     public_keys = []
     for address in addresses:
         public_keys.append(address['public_key'])
     
     try:
-        response = get_address_balance(public_keys)
+        url = "https://blockchain.info/balance?active=" + "|".join(public_keys)
+        response = session.get(url)
         
         if response.status_code == 200:
             content = response.content
@@ -361,6 +360,18 @@ def create_logs_directory():
 
 
 def check_addresses(addresses_queue, wordlist_queue, mnemonic, pos_file):
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"]
+    )
+
+    adapter = LimiterAdapter(per_second=10, max_retries=retry_strategy)
+
+    session = Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
     try:
         max_addresses = 137
         total_verified = 0
@@ -379,7 +390,7 @@ def check_addresses(addresses_queue, wordlist_queue, mnemonic, pos_file):
                 if address == None:
                     # If addresses is empty no request to blockchain.info is needed
                     if addresses:
-                        check_public_keys(addresses)
+                        check_public_keys(addresses, session)
                         show_status(len(addresses), addresses_queue.qsize())
                         
                         logger.info(
@@ -392,7 +403,7 @@ def check_addresses(addresses_queue, wordlist_queue, mnemonic, pos_file):
                 else:
                     addresses.append(address)
             
-            check_public_keys(addresses)
+            check_public_keys(addresses, session)
 
             total_verified += len(addresses)
             count += 1
