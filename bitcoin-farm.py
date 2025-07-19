@@ -262,9 +262,10 @@ def generate_wallets(wordlist_queue, addresses_queue, derivation_path, depth):
                     logger.debug(address)
 
                     addresses_queue.put(address)
-
     except KeyboardInterrupt:
         print(f"generator process interrupted ({current_process().name})")
+    except Exception as e:
+        logger.error(f"error during wallet generation: {e}")
 
 
 def get_address_balance(public_keys):
@@ -322,19 +323,26 @@ def check_public_keys(addresses):
                     save_filtered_addresses(filtered_address)
 
         else:
-            logger.warning(response, response.content)
+            status = {
+                "request": response.url,
+                "status_code": response.status_code,
+                "response": response.text
+            }
+            logger.warning(status)
     
     except Exception as e:
         logger.warning(e)
 
 
-def show_status(total_verified, addresses_queue_size): 
+def show_status(total_verified, addresses_queue_size, wordlist_queue): 
     check_per_seconds = total_verified / (time() - start_time)
     status = {
         "total": total_verified,
         "check_per_second": check_per_seconds,
-        "queue_size": addresses_queue_size
+        "address_queue_size": addresses_queue_size
     }
+    if wordlist_queue:
+        status["wordlist_queue_size"] = wordlist_queue.qsize()
 
     logger.info(status)
 
@@ -352,7 +360,7 @@ def create_logs_directory():
         exit(1)
 
 
-def check_addresses(addresses_queue, mnemonic, pos_file):
+def check_addresses(addresses_queue, wordlist_queue, mnemonic, pos_file):
     try:
         max_addresses = 137
         total_verified = 0
@@ -392,7 +400,7 @@ def check_addresses(addresses_queue, mnemonic, pos_file):
                 if not mnemonic:
                     with open(pos_file, "w") as file:
                         file.write(str(address["seek_position"]))
-                show_status(total_verified, addresses_queue.qsize())
+                show_status(total_verified, addresses_queue.qsize(), wordlist_queue)
     
     except KeyboardInterrupt:
         print(f"checker process interrupted ({current_process().name})")
@@ -424,11 +432,11 @@ def create_workers(addresses_queue=None, derivation_path=None, depth=None, wordl
     return workers_processes
 
 
-def create_checker(addresses_queue, mnemonic=False):
+def create_checker(addresses_queue, wordlist_queue=None, mnemonic=False):
     process = Process(
         name='checker_addresses',
         target=check_addresses,
-        args=(addresses_queue, mnemonic, pos_file)
+        args=(addresses_queue, wordlist_queue, mnemonic, pos_file)
     )
     process.start()
 
@@ -513,7 +521,7 @@ def process_wordlist(path, derivation, depth):
         depth,
         wordlist_queue
     )
-    checker_process = create_checker(addresses_queue)
+    checker_process = create_checker(addresses_queue, wordlist_queue)
 
     consume_wordlist_process = Process(
         name='consume_wordlist_process',
