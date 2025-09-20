@@ -430,6 +430,7 @@ def create_workers(addresses_queue=None, derivation_path=None, depth=None, wordl
                 args=(addresses_queue, derivation_path, depth)
             )
             process.start()
+            logger.info(f"worker process started (name: {process.name}, pid: {process.pid})")
             workers_processes.append(process)
         else:
             process = Process(
@@ -438,6 +439,7 @@ def create_workers(addresses_queue=None, derivation_path=None, depth=None, wordl
                 args=(wordlist_queue, addresses_queue, derivation_path, depth)
             )
             process.start()
+            logger.info(f"worker process started (name: {process.name}, pid: {process.pid})")
             workers_processes.append(process)
     
     return workers_processes
@@ -450,6 +452,7 @@ def create_checker(addresses_queue, wordlist_queue=None, mnemonic=False):
         args=(addresses_queue, wordlist_queue, mnemonic, pos_file)
     )
     process.start()
+    logger.info(f"checker process started (name: {process.name}, pid: {process.pid})")
 
     return process
 
