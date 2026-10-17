@@ -48,11 +48,10 @@ class RocksDbRepository:
             return False
         return self.db.get(key) is not None
 
-    def save_generated_record(self, sequence: int, private_key: str, public_key: str, address: str) -> None:
+    def save_generated_record(self, sequence: int, private_key: str, address: str) -> None:
         payload = json.dumps({
             "sequence": sequence,
             "private_key": private_key,
-            "public_key": public_key,
             "address": address,
         }, sort_keys=True).encode("utf-8")
         self.db.put(GENERATED_RECORD_PREFIX + str(sequence).encode("ascii"), payload)
