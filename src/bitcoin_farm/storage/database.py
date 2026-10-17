@@ -49,19 +49,29 @@ class RocksDbRepository:
         return self.db.get(key) is not None
 
     def save_generated_record(
-            self, sequence: int,
-            wordlist_filename: str,
-            kind: str,
-            private_key: str,
-            address: str) -> None:
+        self,
+        run_id: str,
+        sequence: int,
+        wordlist_filename: str,
+        kind: str,
+        private_key: str,
+        address: str,
+    ) -> None:
         payload = json.dumps({
+            "run_id": run_id,
             "sequence": sequence,
             "wordlist_filename": wordlist_filename,
             "kind": kind,
             "private_key": private_key,
             "address": address,
         }, sort_keys=True).encode("utf-8")
-        self.db.put(GENERATED_RECORD_PREFIX + str(sequence).encode("ascii"), payload)
+        key = (
+            GENERATED_RECORD_PREFIX
+            + run_id.encode("ascii")
+            + b":"
+            + str(sequence).encode("ascii")
+        )
+        self.db.put(key, payload)
 
     def generated_records(self, offset: int = 0, limit: int = 100) -> dict:
         if offset < 0 or limit <= 0:
@@ -73,7 +83,9 @@ class RocksDbRepository:
                 break
             records.append(json.loads(value))
 
-        records.sort(key=lambda record: int(record["sequence"]))
+        records.sort(
+            key=lambda record: (int(record["sequence"]), record.get("run_id", ""))
+        )
         return {
             "total": len(records),
             "offset": offset,
