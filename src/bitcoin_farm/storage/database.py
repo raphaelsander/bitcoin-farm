@@ -93,6 +93,31 @@ class RocksDbRepository:
             "items": records[offset:offset + limit],
         }
 
+    def delete_generated_records(self, run_id: str | None = None) -> int:
+        record_prefix = GENERATED_RECORD_PREFIX
+        if run_id is not None:
+            if not run_id:
+                raise ValueError("run_id must not be empty")
+            try:
+                record_prefix += run_id.encode("ascii") + b":"
+            except UnicodeEncodeError as exc:
+                raise ValueError("run_id must contain ASCII characters") from exc
+
+        keys = []
+        for key, _ in self.db.items(from_key=record_prefix):
+            if not key.startswith(record_prefix):
+                break
+            keys.append(key)
+
+        if not keys:
+            return 0
+
+        batch = WriteBatch()
+        for key in keys:
+            batch.delete(key)
+        self.db.write(batch)
+        return len(keys)
+
     def close(self) -> None:
         logging.info("Closing RocksDB.")
         self.db.close()
